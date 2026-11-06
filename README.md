@@ -16,12 +16,23 @@ the public address of your source code. The URL appears in the About box (see *L
 
 Build the **Tablarion_All** scheme (Release for best performance). The build copies the plug-ins to
 `~/Library/Audio/Plug-Ins/VST3` and `~/Library/Audio/Plug-Ins/Components`.
-Builds are **universal** (Apple Silicon arm64 + Intel x86_64, macOS 12+) by default:
+### Choosing the CPU (Apple Silicon / Intel)
 
-* Command line: `./build_universal.sh` builds Release binaries for both architectures.
-* Xcode: pick the run destination **Any Mac (Apple Silicon, Intel)**, or use *Product > Archive*.
-  With the destination set to *My Mac*, Xcode builds only your Mac's own architecture.
-* For a quicker native-only development build, run `./setup.sh -DTABLARION_UNIVERSAL=OFF`.
+| Command | Builds | Output folder |
+|---|---|---|
+| `./build.sh` | universal: Apple Silicon (arm64) + Intel (x86_64) | `build/` |
+| `./build.sh arm64` | Apple Silicon only | `build-arm64/` |
+| `./build.sh x86_64` | Intel only | `build-x86_64/` |
+| `./build.sh all` | all three | all of the above |
+
+Each build ends up in `<folder>/Tablarion_artefacts/Release/` (Standalone app, VST3, AU). Any Mac can build
+any of these targets. Plug-ins are copied to `~/Library/Audio/Plug-Ins` only when they can run on the Mac that
+built them (universal or that Mac's own CPU). Force it with `-DTABLARION_INSTALL_PLUGINS=ON/OFF`.
+
+In Xcode: generate the project with `./setup.sh -DTABLARION_ARCH=<universal|arm64|x86_64|native>`, then build
+with the run destination **Any Mac (Apple Silicon, Intel)** or *Product > Archive*. With *My Mac*, Xcode
+builds only the current Mac's own architecture. `native` builds only for the current Mac, which is quickest
+during development. Minimum macOS version is 12.
 
 ## Usage
 

@@ -1,14 +1,47 @@
 cmake_minimum_required(VERSION 3.22)
 
 # Target platform: must be set before project().
-# Universal by default (Apple Silicon + Intel). Pass -DTABLARION_UNIVERSAL=OFF for a faster native-only build.
+#   TABLARION_ARCH = universal (default) | arm64 (Apple Silicon) | x86_64 (Intel) | native (this Mac's CPU)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version (Xcode 27 supports 12.0+)")
-option(TABLARION_UNIVERSAL "Build universal (arm64 + x86_64) binaries" ON)
-if(TABLARION_UNIVERSAL)
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Target architectures" FORCE)
-else()
-    set(CMAKE_OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}" CACHE STRING "Target architectures" FORCE)
+set(TABLARION_ARCH "universal" CACHE STRING "Target CPU: universal, arm64 (Apple Silicon), x86_64 (Intel) or native")
+set_property(CACHE TABLARION_ARCH PROPERTY STRINGS universal arm64 x86_64 native)
+
+# Backwards compatibility with the old -DTABLARION_UNIVERSAL=OFF switch
+if(DEFINED TABLARION_UNIVERSAL AND NOT TABLARION_UNIVERSAL AND TABLARION_ARCH STREQUAL "universal")
+    set(TABLARION_ARCH "native" CACHE STRING "" FORCE)
 endif()
+unset(TABLARION_UNIVERSAL CACHE)
+
+# CMAKE_HOST_SYSTEM_PROCESSOR is not known before project(), so ask the kernel (arm64 or x86_64)
+execute_process(COMMAND uname -m OUTPUT_VARIABLE TABLARION_HOST_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(TABLARION_HOST_ARCH STREQUAL "x86_64")
+    # A Terminal running under Rosetta reports x86_64 on Apple Silicon: detect the real CPU
+    execute_process(COMMAND sysctl -n hw.optional.arm64 OUTPUT_VARIABLE _arm OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_arm STREQUAL "1")
+        set(TABLARION_HOST_ARCH "arm64")
+    endif()
+endif()
+
+if(TABLARION_ARCH STREQUAL "universal")
+    set(_archs "arm64;x86_64")
+elseif(TABLARION_ARCH STREQUAL "arm64" OR TABLARION_ARCH STREQUAL "x86_64")
+    set(_archs "${TABLARION_ARCH}")
+elseif(TABLARION_ARCH STREQUAL "native")
+    set(_archs "${TABLARION_HOST_ARCH}")
+else()
+    message(FATAL_ERROR "TABLARION_ARCH must be universal, arm64, x86_64 or native (got '${TABLARION_ARCH}')")
+endif()
+set(CMAKE_OSX_ARCHITECTURES "${_archs}" CACHE STRING "Target architectures" FORCE)
+
+# Auto-install the plug-ins into ~/Library/Audio/Plug-Ins only when they can run natively on this Mac
+# (universal, or built for this Mac's own CPU). A cross build, e.g. Intel on Apple Silicon, stays in the build folder.
+if(_archs MATCHES "${TABLARION_HOST_ARCH}")
+    set(_install_default ON)
+else()
+    set(_install_default OFF)
+endif()
+option(TABLARION_INSTALL_PLUGINS "Copy the VST3/AU into ~/Library/Audio/Plug-Ins after building" ${_install_default})
+message(STATUS "Tablarion: target CPU = ${_archs} (host ${TABLARION_HOST_ARCH}), install plug-ins = ${TABLARION_INSTALL_PLUGINS}")
 
 project(Tablarion VERSION 1.0.0 LANGUAGES C CXX)
 
@@ -74,7 +107,7 @@ juce_add_plugin(Tablarion
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD ${TABLARION_INSTALL_PLUGINS}
     PLUGIN_MANUFACTURER_CODE Tblr
     PLUGIN_CODE Tbln
     FORMATS VST3 AU Standalone
