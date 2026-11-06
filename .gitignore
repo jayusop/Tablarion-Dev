@@ -1,0 +1,13 @@
+build/
+build-*/
+*.xcodeproj/
+.DS_Store
+ThirdParty/JUCE/
+.claude/
+sf2/
+*.sf2
+build_*/
+*.wav
+*.log
+xcuserdata/
+DerivedData/
