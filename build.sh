@@ -1,44 +1,32 @@
 #!/bin/sh
-# Builds Release binaries of Tablarion (Standalone app, VST3, AU) for a chosen CPU.
+# Builds Tablarion (Standalone app, VST3, AU) for one CPU from the command line.
 #
-#   ./build.sh                 universal (Apple Silicon + Intel)  -> build/
-#   ./build.sh arm64           Apple Silicon only                 -> build-arm64/
-#   ./build.sh x86_64          Intel only                         -> build-x86_64/
-#   ./build.sh all             all three of the above
+#   ./build.sh applesilicon    Apple Silicon (arm64)  -> build/Tablarion_artefacts/AppleSilicon/
+#   ./build.sh intel           Intel (x86_64)         -> build/Tablarion_artefacts/Intel/
+#   ./build.sh all             both of the above
 #
-# Extra CMake options can follow, e.g. ./build.sh arm64 -DTABLARION_SOURCE_URL=https://github.com/you/Tablarion
+# Extra CMake options can follow, e.g. ./build.sh intel -DTABLARION_SOURCE_URL=https://github.com/you/Tablarion
 set -e
 cd "$(dirname "$0")"
 
-ARCH="${1:-universal}"
+TARGET="${1:-}"
 [ $# -gt 0 ] && shift
 
-if [ "$ARCH" = "all" ]; then
-  for a in universal arm64 x86_64; do "$0" "$a" "$@"; done
-  exit 0
-fi
-
-case "$ARCH" in
-  universal) DIR=build ;;
-  arm64|apple|applesilicon) ARCH=arm64;  DIR=build-arm64 ;;
-  x86_64|intel|x64)         ARCH=x86_64; DIR=build-x86_64 ;;
-  *) echo "usage: $0 [universal|arm64|x86_64|all] [cmake options...]"; exit 1 ;;
+case "$TARGET" in
+  all) "$0" applesilicon "$@"; "$0" intel "$@"; exit 0 ;;
+  applesilicon|apple|arm64|as) CONFIG=AppleSilicon; SCHEME="Tablarion - Apple Silicon" ;;
+  intel|x86_64|x64)            CONFIG=Intel;        SCHEME="Tablarion - Intel" ;;
+  *) echo "usage: $0 applesilicon|intel|all [cmake options...]"; exit 1 ;;
 esac
 
-if [ ! -f ThirdParty/JUCE/CMakeLists.txt ]; then
-  git clone --depth 1 --branch 8.0.9 https://github.com/juce-framework/JUCE.git ThirdParty/JUCE
-fi
-command -v cmake >/dev/null || { echo "cmake required: brew install cmake"; exit 1; }
+./setup.sh "$@" >/dev/null
 
-echo "==> Configuring $ARCH in $DIR"
-cmake -S . -B "$DIR" -G Xcode -DTABLARION_ARCH="$ARCH" "$@"
-
-echo "==> Building $ARCH"
-xcodebuild -project "$DIR/Tablarion.xcodeproj" -scheme Tablarion_All -configuration Release \
+echo "==> Building $CONFIG"
+xcodebuild -project build/Tablarion.xcodeproj -scheme "$SCHEME" \
            -destination 'generic/platform=macOS' -quiet build
 
-OUT="$DIR/Tablarion_artefacts/Release"
-echo "==> $ARCH results ($OUT):"
+OUT="build/Tablarion_artefacts/$CONFIG"
+echo "==> $CONFIG results ($OUT):"
 for b in Standalone/Tablarion.app VST3/Tablarion.vst3 AU/Tablarion.component; do
   printf '  %-26s %s\n' "$b" "$(lipo -archs "$OUT/$b/Contents/MacOS/Tablarion")"
 done

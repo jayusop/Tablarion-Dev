@@ -1,49 +1,60 @@
 cmake_minimum_required(VERSION 3.22)
 
-# Target platform: must be set before project().
-#   TABLARION_ARCH = universal (default) | arm64 (Apple Silicon) | x86_64 (Intel) | native (this Mac's CPU)
+# ---- Target CPUs (must be set before project()) ---------------------------------------------------
+# One build per CPU, no universal binaries:
+#   Xcode generator : configurations  Debug         -> this Mac's CPU only (development)
+#                                     AppleSilicon  -> arm64  release
+#                                     Intel         -> x86_64 release
+#   Other generators: TABLARION_ARCH = arm64 | x86_64 | native (default)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version (Xcode 27 supports 12.0+)")
-set(TABLARION_ARCH "universal" CACHE STRING "Target CPU: universal, arm64 (Apple Silicon), x86_64 (Intel) or native")
-set_property(CACHE TABLARION_ARCH PROPERTY STRINGS universal arm64 x86_64 native)
+set(TABLARION_RELEASE_CONFIGS AppleSilicon Intel)
 
-# Backwards compatibility with the old -DTABLARION_UNIVERSAL=OFF switch
-if(DEFINED TABLARION_UNIVERSAL AND NOT TABLARION_UNIVERSAL AND TABLARION_ARCH STREQUAL "universal")
-    set(TABLARION_ARCH "native" CACHE STRING "" FORCE)
+# This Mac's real CPU (CMAKE_HOST_SYSTEM_PROCESSOR is not known before project()).
+execute_process(COMMAND uname -m OUTPUT_VARIABLE TABLARION_HOST_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(TABLARION_HOST_ARCH STREQUAL "x86_64")
+    execute_process(COMMAND sysctl -n hw.optional.arm64 OUTPUT_VARIABLE _arm OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_arm STREQUAL "1")
+        set(TABLARION_HOST_ARCH "arm64") # Terminal running under Rosetta on Apple Silicon
+    endif()
+endif()
+set(_host_arch "${TABLARION_HOST_ARCH}")
+
+if(CMAKE_GENERATOR STREQUAL "Xcode")
+    set(CMAKE_CONFIGURATION_TYPES "Debug;AppleSilicon;Intel" CACHE STRING "Build configurations" FORCE)
+    # Architectures are fixed per configuration (see tablarion_apply_xcode_archs), never both at once.
+    set(CMAKE_OSX_ARCHITECTURES "" CACHE STRING "Set per configuration" FORCE)
+    set("CMAKE_XCODE_ATTRIBUTE_ARCHS[variant=Debug]" "${TABLARION_HOST_ARCH}")
+    set("CMAKE_XCODE_ATTRIBUTE_ARCHS[variant=AppleSilicon]" "arm64")
+    set("CMAKE_XCODE_ATTRIBUTE_ARCHS[variant=Intel]" "x86_64")
+    set(CMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH "NO")
+else()
+    set(TABLARION_ARCH "native" CACHE STRING "Target CPU for non-Xcode builds: arm64, x86_64 or native")
+    set_property(CACHE TABLARION_ARCH PROPERTY STRINGS arm64 x86_64 native)
+    if(TABLARION_ARCH STREQUAL "native")
+        set(CMAKE_OSX_ARCHITECTURES "${_host_arch}" CACHE STRING "Target architecture" FORCE)
+    elseif(TABLARION_ARCH STREQUAL "arm64" OR TABLARION_ARCH STREQUAL "x86_64")
+        set(CMAKE_OSX_ARCHITECTURES "${TABLARION_ARCH}" CACHE STRING "Target architecture" FORCE)
+    else()
+        message(FATAL_ERROR "TABLARION_ARCH must be arm64, x86_64 or native (got '${TABLARION_ARCH}')")
+    endif()
 endif()
 unset(TABLARION_UNIVERSAL CACHE)
 
-# CMAKE_HOST_SYSTEM_PROCESSOR is not known before project(), so ask the kernel (arm64 or x86_64)
-execute_process(COMMAND uname -m OUTPUT_VARIABLE TABLARION_HOST_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
-if(TABLARION_HOST_ARCH STREQUAL "x86_64")
-    # A Terminal running under Rosetta reports x86_64 on Apple Silicon: detect the real CPU
-    execute_process(COMMAND sysctl -n hw.optional.arm64 OUTPUT_VARIABLE _arm OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    if(_arm STREQUAL "1")
-        set(TABLARION_HOST_ARCH "arm64")
-    endif()
-endif()
-
-if(TABLARION_ARCH STREQUAL "universal")
-    set(_archs "arm64;x86_64")
-elseif(TABLARION_ARCH STREQUAL "arm64" OR TABLARION_ARCH STREQUAL "x86_64")
-    set(_archs "${TABLARION_ARCH}")
-elseif(TABLARION_ARCH STREQUAL "native")
-    set(_archs "${TABLARION_HOST_ARCH}")
-else()
-    message(FATAL_ERROR "TABLARION_ARCH must be universal, arm64, x86_64 or native (got '${TABLARION_ARCH}')")
-endif()
-set(CMAKE_OSX_ARCHITECTURES "${_archs}" CACHE STRING "Target architectures" FORCE)
-
-# Auto-install the plug-ins into ~/Library/Audio/Plug-Ins only when they can run natively on this Mac
-# (universal, or built for this Mac's own CPU). A cross build, e.g. Intel on Apple Silicon, stays in the build folder.
-if(_archs MATCHES "${TABLARION_HOST_ARCH}")
-    set(_install_default ON)
-else()
-    set(_install_default OFF)
-endif()
-option(TABLARION_INSTALL_PLUGINS "Copy the VST3/AU into ~/Library/Audio/Plug-Ins after building" ${_install_default})
-message(STATUS "Tablarion: target CPU = ${_archs} (host ${TABLARION_HOST_ARCH}), install plug-ins = ${TABLARION_INSTALL_PLUGINS}")
+option(TABLARION_INSTALL_PLUGINS
+       "Copy the VST3/AU into ~/Library/Audio/Plug-Ins after building (only when they can run on this Mac)" ON)
 
 project(Tablarion VERSION 1.0.0 LANGUAGES C CXX)
+
+# The CPU-specific configurations are full release builds: copy every Release flag set.
+foreach(_cfg IN LISTS TABLARION_RELEASE_CONFIGS)
+    string(TOUPPER "${_cfg}" _CFG)
+    foreach(_lang C CXX OBJC OBJCXX)
+        set(CMAKE_${_lang}_FLAGS_${_CFG} "${CMAKE_${_lang}_FLAGS_RELEASE}")
+    endforeach()
+    foreach(_kind EXE SHARED MODULE STATIC)
+        set(CMAKE_${_kind}_LINKER_FLAGS_${_CFG} "${CMAKE_${_kind}_LINKER_FLAGS_RELEASE}")
+    endforeach()
+endforeach()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -107,7 +118,8 @@ juce_add_plugin(Tablarion
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD ${TABLARION_INSTALL_PLUGINS}
+    COPY_PLUGIN_AFTER_BUILD FALSE
+    VST3_AUTO_MANIFEST FALSE
     PLUGIN_MANUFACTURER_CODE Tblr
     PLUGIN_CODE Tbln
     FORMATS VST3 AU Standalone
@@ -131,6 +143,12 @@ target_compile_definitions(Tablarion PUBLIC
     JUCE_REPORT_APP_USAGE=0
     TABLARION_SOURCE_URL="${TABLARION_SOURCE_URL}")
 
+# JUCE's recommended flags only recognise a configuration named "Release"; give the CPU-specific
+# release configurations the same optimisation and link-time optimisation.
+add_library(tablarion_release_flags INTERFACE)
+target_compile_options(tablarion_release_flags INTERFACE $<$<CONFIG:AppleSilicon,Intel>:-O3 -flto>)
+target_link_options(tablarion_release_flags INTERFACE $<$<CONFIG:AppleSilicon,Intel>:-flto -Wl,-weak_reference_mismatches,weak>)
+
 target_link_libraries(Tablarion
     PRIVATE
         juce::juce_audio_utils
@@ -138,27 +156,18 @@ target_link_libraries(Tablarion
         juce::juce_dsp
     PUBLIC
         juce::juce_recommended_config_flags
-        juce::juce_recommended_lto_flags)
+        juce::juce_recommended_lto_flags
+        tablarion_release_flags)
 
 # JUCE always compiles its ARA and LV2 support units; with those formats disabled they are empty,
 # which makes libtool warn "has no symbols". Silence that specific, harmless warning.
 set_target_properties(Tablarion PROPERTIES XCODE_ATTRIBUTE_OTHER_LIBTOOLFLAGS "-no_warning_for_no_symbols")
-
-# JUCE's VST3 manifest helper (a build-time tool that writes moduleinfo.json) compiles Steinberg SDK
-# code that uses std::wstring_convert, deprecated in recent macOS SDKs. Silence that third-party warning
-# for the helper only. JUCE may create the helper late, so apply this at the end of configuration.
-function(tablarion_quiet_vst3_helper)
-    if(TARGET Tablarion_vst3_helper)
-        target_compile_options(Tablarion_vst3_helper PRIVATE -Wno-deprecated-declarations)
-    endif()
-endfunction()
 
 # JUCE's GUI module still uses Metal "managed storage" APIs deprecated in macOS 27. Silence deprecation
 # warnings for that single JUCE file only (our own sources keep every warning).
 set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/JUCE/modules/juce_gui_basics/juce_gui_basics.mm"
     TARGET_DIRECTORY Tablarion
     PROPERTIES COMPILE_OPTIONS "-Wno-deprecated-declarations")
-cmake_language(DEFER DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} CALL tablarion_quiet_vst3_helper)
 
 # Give the VST3 / AU bundles the same icon as the standalone app (Finder & DAW plug-in browsers)
 foreach(fmt VST3 AU Standalone)
@@ -176,6 +185,43 @@ foreach(fmt VST3 AU Standalone)
             VERBATIM)
     endif()
 endforeach()
+
+# Install the plug-ins for the DAWs on this Mac - but only a build whose CPU matches this Mac
+# (an Intel build made on Apple Silicon, or vice versa, stays in the build folder).
+if(TABLARION_INSTALL_PLUGINS)
+    set(_install_script "${CMAKE_CURRENT_SOURCE_DIR}/Tools/install_plugin.sh")
+    if(TARGET Tablarion_VST3)
+        add_custom_command(TARGET Tablarion_VST3 POST_BUILD
+            COMMAND /bin/sh "${_install_script}" "$<TARGET_BUNDLE_DIR:Tablarion_VST3>" "$ENV{HOME}/Library/Audio/Plug-Ins/VST3"
+            VERBATIM)
+    endif()
+    if(TARGET Tablarion_AU)
+        add_custom_command(TARGET Tablarion_AU POST_BUILD
+            COMMAND /bin/sh "${_install_script}" "$<TARGET_BUNDLE_DIR:Tablarion_AU>" "$ENV{HOME}/Library/Audio/Plug-Ins/Components"
+            VERBATIM)
+    endif()
+endif()
+
+# Xcode: CMake writes ARCHS into every target, which would override the project-level per-configuration
+# values. Pin the CPU per configuration on each buildable target (deferred so JUCE's late targets are seen).
+function(tablarion_apply_xcode_archs)
+    if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+        return()
+    endif()
+    get_property(targets DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(t IN LISTS targets)
+        get_target_property(type ${t} TYPE)
+        if(type STREQUAL "INTERFACE_LIBRARY")
+            continue()
+        endif()
+        set_target_properties(${t} PROPERTIES
+            "XCODE_ATTRIBUTE_ARCHS[variant=Debug]"        "${TABLARION_HOST_ARCH}"
+            "XCODE_ATTRIBUTE_ARCHS[variant=AppleSilicon]" "arm64"
+            "XCODE_ATTRIBUTE_ARCHS[variant=Intel]"        "x86_64"
+            XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH              "NO")
+    endforeach()
+endfunction()
+cmake_language(DEFER DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} CALL tablarion_apply_xcode_archs)
 
 if(TABLARION_BUILD_TOOLS)
 # ---- UI snapshot tool (development) ------------------------------------------

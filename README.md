@@ -14,25 +14,33 @@ open build/Tablarion.xcodeproj
 `setup.sh` clones JUCE 8.0.9 and generates `build/Tablarion.xcodeproj`. Set `TABLARION_SOURCE_URL` to
 the public address of your source code. The URL appears in the About box (see *Licence* below).
 
-Build the **Tablarion_All** scheme (Release for best performance). The build copies the plug-ins to
-`~/Library/Audio/Plug-Ins/VST3` and `~/Library/Audio/Plug-Ins/Components`.
 ### Choosing the CPU (Apple Silicon / Intel)
 
-| Command | Builds | Output folder |
-|---|---|---|
-| `./build.sh` | universal: Apple Silicon (arm64) + Intel (x86_64) | `build/` |
-| `./build.sh arm64` | Apple Silicon only | `build-arm64/` |
-| `./build.sh x86_64` | Intel only | `build-x86_64/` |
-| `./build.sh all` | all three | all of the above |
+Tablarion is built separately for each CPU; there are no universal binaries. The Xcode project has one
+scheme per CPU. Pick it from the scheme menu next to the Run button, then choose *Product > Build*:
 
-Each build ends up in `<folder>/Tablarion_artefacts/Release/` (Standalone app, VST3, AU). Any Mac can build
-any of these targets. Plug-ins are copied to `~/Library/Audio/Plug-Ins` only when they can run on the Mac that
-built them (universal or that Mac's own CPU). Force it with `-DTABLARION_INSTALL_PLUGINS=ON/OFF`.
+| Xcode scheme | Configuration | CPU | Output folder |
+|---|---|---|---|
+| **Tablarion - Apple Silicon** | `AppleSilicon` (release) | arm64 | `build/Tablarion_artefacts/AppleSilicon/` |
+| **Tablarion - Intel** | `Intel` (release) | x86_64 | `build/Tablarion_artefacts/Intel/` |
+| Tablarion - Debug | `Debug` (development) | this Mac's CPU | `build/Tablarion_artefacts/Debug/` |
 
-In Xcode: generate the project with `./setup.sh -DTABLARION_ARCH=<universal|arm64|x86_64|native>`, then build
-with the run destination **Any Mac (Apple Silicon, Intel)** or *Product > Archive*. With *My Mac*, Xcode
-builds only the current Mac's own architecture. `native` builds only for the current Mac, which is quickest
-during development. Minimum macOS version is 12.
+Each output folder contains `Standalone/Tablarion.app`, `VST3/Tablarion.vst3` and `AU/Tablarion.component`.
+Any Mac can build both CPUs. On an Apple Silicon Mac the Intel scheme's run destination is
+*My Mac (Rosetta)* or *Any Mac*, and Xcode selects it automatically.
+
+From the command line:
+
+| Command | Builds |
+|---|---|
+| `./build.sh applesilicon` | Apple Silicon (arm64) |
+| `./build.sh intel` | Intel (x86_64) |
+| `./build.sh all` | both |
+
+After a build, the VST3/AU are copied to `~/Library/Audio/Plug-Ins/VST3` and `.../Components` **only if they
+match this Mac's CPU**. An Intel build made on an Apple Silicon Mac stays in the build folder, so it never
+replaces plug-ins your DAW can load. Use `-DTABLARION_INSTALL_PLUGINS=OFF` to never copy. If you move the
+project folder, run `./setup.sh` again (the schemes store absolute paths). Minimum macOS version is 12.
 
 ## Usage
 
