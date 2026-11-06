@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 
 # ---- Target CPUs (must be set before project()) ---------------------------------------------------
-# One build per CPU, no universal binaries:
 #   Xcode generator : configurations  Debug         -> this Mac's CPU only (development)
-#                                     AppleSilicon  -> arm64  release
-#                                     Intel         -> x86_64 release
+#                                     AppleSilicon  -> arm64          release
+#                                     Intel         -> x86_64         release
+#                                     Universal     -> arm64 + x86_64 release (one binary for both)
 #   Other generators: TABLARION_ARCH = arm64 | x86_64 | native (default)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version (Xcode 27 supports 12.0+)")
-set(TABLARION_RELEASE_CONFIGS AppleSilicon Intel)
+set(TABLARION_RELEASE_CONFIGS AppleSilicon Intel Universal)
 
 # This Mac's real CPU (CMAKE_HOST_SYSTEM_PROCESSOR is not known before project()).
 execute_process(COMMAND uname -m OUTPUT_VARIABLE TABLARION_HOST_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -20,12 +20,13 @@ endif()
 set(_host_arch "${TABLARION_HOST_ARCH}")
 
 if(CMAKE_GENERATOR STREQUAL "Xcode")
-    set(CMAKE_CONFIGURATION_TYPES "Debug;AppleSilicon;Intel" CACHE STRING "Build configurations" FORCE)
-    # Architectures are fixed per configuration (see tablarion_apply_xcode_archs), never both at once.
+    set(CMAKE_CONFIGURATION_TYPES "Debug;AppleSilicon;Intel;Universal" CACHE STRING "Build configurations" FORCE)
+    # Architectures are fixed per configuration (see tablarion_apply_xcode_archs).
     set(CMAKE_OSX_ARCHITECTURES "" CACHE STRING "Set per configuration" FORCE)
     set("CMAKE_XCODE_ATTRIBUTE_ARCHS[variant=Debug]" "${TABLARION_HOST_ARCH}")
     set("CMAKE_XCODE_ATTRIBUTE_ARCHS[variant=AppleSilicon]" "arm64")
     set("CMAKE_XCODE_ATTRIBUTE_ARCHS[variant=Intel]" "x86_64")
+    set("CMAKE_XCODE_ATTRIBUTE_ARCHS[variant=Universal]" "arm64 x86_64")
     set(CMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH "NO")
 else()
     set(TABLARION_ARCH "native" CACHE STRING "Target CPU for non-Xcode builds: arm64, x86_64 or native")
@@ -146,8 +147,8 @@ target_compile_definitions(Tablarion PUBLIC
 # JUCE's recommended flags only recognise a configuration named "Release"; give the CPU-specific
 # release configurations the same optimisation and link-time optimisation.
 add_library(tablarion_release_flags INTERFACE)
-target_compile_options(tablarion_release_flags INTERFACE $<$<CONFIG:AppleSilicon,Intel>:-O3 -flto>)
-target_link_options(tablarion_release_flags INTERFACE $<$<CONFIG:AppleSilicon,Intel>:-flto -Wl,-weak_reference_mismatches,weak>)
+target_compile_options(tablarion_release_flags INTERFACE $<$<CONFIG:AppleSilicon,Intel,Universal>:-O3 -flto>)
+target_link_options(tablarion_release_flags INTERFACE $<$<CONFIG:AppleSilicon,Intel,Universal>:-flto -Wl,-weak_reference_mismatches,weak>)
 
 target_link_libraries(Tablarion
     PRIVATE
@@ -218,6 +219,7 @@ function(tablarion_apply_xcode_archs)
             "XCODE_ATTRIBUTE_ARCHS[variant=Debug]"        "${TABLARION_HOST_ARCH}"
             "XCODE_ATTRIBUTE_ARCHS[variant=AppleSilicon]" "arm64"
             "XCODE_ATTRIBUTE_ARCHS[variant=Intel]"        "x86_64"
+            "XCODE_ATTRIBUTE_ARCHS[variant=Universal]"    "arm64 x86_64"
             XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH              "NO")
     endforeach()
 endfunction()

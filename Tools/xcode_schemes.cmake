@@ -1,6 +1,7 @@
 # Writes shared Xcode schemes for each CPU build of Tablarion:
 #   "Tablarion - Apple Silicon"  -> configuration AppleSilicon (arm64)
 #   "Tablarion - Intel"          -> configuration Intel (x86_64)
+#   "Tablarion - Universal"      -> configuration Universal (arm64 + x86_64 in one binary)
 #   "Tablarion - Debug"          -> configuration Debug (this Mac's CPU)
 # Usage: cmake -DXCODEPROJ=build/Tablarion.xcodeproj -P Tools/xcode_schemes.cmake
 if(NOT XCODEPROJ OR NOT EXISTS "${XCODEPROJ}/project.pbxproj")
@@ -32,7 +33,7 @@ get_filename_component(container "${XCODEPROJ}" ABSOLUTE)
 set(dir "${XCODEPROJ}/xcshareddata/xcschemes")
 file(MAKE_DIRECTORY "${dir}")
 
-foreach(entry "Apple Silicon|AppleSilicon" "Intel|Intel" "Debug|Debug")
+foreach(entry "Apple Silicon|AppleSilicon" "Intel|Intel" "Universal|Universal" "Debug|Debug")
     string(REPLACE "|" ";" parts "${entry}")
     list(GET parts 0 label)
     list(GET parts 1 cfg)

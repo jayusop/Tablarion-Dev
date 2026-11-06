@@ -16,14 +16,18 @@ the public address of your source code. The URL appears in the About box (see *L
 
 ### Choosing the CPU (Apple Silicon / Intel)
 
-Tablarion is built separately for each CPU; there are no universal binaries. The Xcode project has one
-scheme per CPU. Pick it from the scheme menu next to the Run button, then choose *Product > Build*:
+The Xcode project has one scheme for each CPU and one for a universal binary. Pick it from the scheme menu
+next to the Run button, then choose *Product > Build*:
 
 | Xcode scheme | Configuration | CPU | Output folder |
 |---|---|---|---|
 | **Tablarion - Apple Silicon** | `AppleSilicon` (release) | arm64 | `build/Tablarion_artefacts/AppleSilicon/` |
 | **Tablarion - Intel** | `Intel` (release) | x86_64 | `build/Tablarion_artefacts/Intel/` |
+| **Tablarion - Universal** | `Universal` (release) | arm64 + x86_64 in one binary | `build/Tablarion_artefacts/Universal/` |
 | Tablarion - Debug | `Debug` (development) | this Mac's CPU | `build/Tablarion_artefacts/Debug/` |
+
+The universal build runs on every supported Mac and is the simplest to distribute. The per-CPU builds are
+about half the size.
 
 Each output folder contains `Standalone/Tablarion.app`, `VST3/Tablarion.vst3` and `AU/Tablarion.component`.
 Any Mac can build both CPUs. On an Apple Silicon Mac the Intel scheme's run destination is
@@ -35,7 +39,8 @@ From the command line:
 |---|---|
 | `./build.sh applesilicon` | Apple Silicon (arm64) |
 | `./build.sh intel` | Intel (x86_64) |
-| `./build.sh all` | both |
+| `./build.sh universal` | Apple Silicon + Intel in one binary |
+| `./build.sh all` | all three |
 
 After a build, the VST3/AU are copied to `~/Library/Audio/Plug-Ins/VST3` and `.../Components` **only if they
 match this Mac's CPU**. An Intel build made on an Apple Silicon Mac stays in the build folder, so it never
